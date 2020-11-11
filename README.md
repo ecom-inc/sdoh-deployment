@@ -5,7 +5,7 @@
 This template deploys a SDOH Portal to Azure App Service. It deploys Postgress server and SDOH Portal docker image.
 
 ## Prerequisite
-- Github credentials with permission to pull docker image
+- Github credentials (user and personal access token) with permission to pull docker image (https://particule.io/en/blog/cicd-github-registry)
 - Azure subscription (https://azure.microsoft.com/en-us/free)
 - Auth0 tenant (https://auth0.com/docs/get-started/learn-the-basics)
 - Google api key to use maps (https://developers.google.com/maps/documentation/android-sdk/get-api-key)
@@ -26,6 +26,7 @@ This template deploys a SDOH Portal to Azure App Service. It deploys Postgress s
 - **Auth Domain** - auth0 domain, used for SDOH Portal user authentication process
 - **Auth Client Id** - auth0 key, used for SDOH Portal user authentication process
 - **Google Api Key** - key used to access google's map api 
+
 
 ## Auth0 configuration
 Several components should be created for SDOH Portal
