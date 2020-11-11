@@ -1,0 +1,226 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "name": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of azure web app. Should be unique all over the world."
+            }
+        },
+        "containerImage": {
+            "type": "string",
+            "defaultValue": "ghcr.io/ecom-inc/sdoh/portal:main",
+            "metadata": {
+                "description": "Sdoh portal docker image."
+            }
+        },
+        "containerRegistryUser": {
+            "type": "string",
+            "metadata": {
+                "description": "Sdoh portal docker image registry user."
+            }
+        },
+        "containerRegistryPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Sdoh portal docker image registry password."
+            }
+        },
+        "databaseSize": {
+            "type": "string",
+            "allowedValues": [
+                "normal",
+                "medium",
+                "large",
+                "huge"
+            ],
+            "defaultValue": "normal",
+            "metadata": {
+                "description": "Azure database for PostgreSQL size. It tells how many resources you need for database server."
+            }
+        },
+        "databaseAdministratorLogin": {
+            "type": "string",
+            "minLength": 2,
+            "defaultValue": "sdoh",
+            "metadata": {
+                "description": "Database administrator login name. It is always good idea to have nonstandard admin name."
+            }
+        },
+        "databaseAdministratorPassword": {
+            "type": "securestring",
+            "minLength": 8,
+            "maxLength": 128,
+            "metadata": {
+                "description": "Database administrator password. Use long strong password."
+            }
+        },
+        "authDomain": {
+            "type": "string",
+            "metadata": {
+                "description": "Auth0 domain without schema."
+            }
+        },
+        "authClientId": {
+            "type": "string",
+            "metadata": {
+                "description": "Auth0 client id."
+            }
+        },
+        "googleApiKey": {
+            "type": "string",
+            "metadata": {
+                "description": "Google api key. Used for google maps."
+            }
+        }
+    },
+    "variables": {
+        "containerRegistryServer": "[concat('https://', substring(parameters('containerImage'), 0, indexOf(parameters('containerImage'), '/')))]",
+        "hostingPlanName": "[concat(parameters('name'), '-service-plan')]",
+        "databaseServerName": "[concat(parameters('name'), '-pgserver')]",
+        "databaseName": "[concat(parameters('name'), '-db')]",
+        "databaseSkuNames": {
+            "normal":{
+                "sku": "GP_Gen5_2"
+            },
+            "medium":{
+                "sku": "GP_Gen5_8"
+            },
+            "large":{
+                "sku": "GP_Gen5_16"
+            }
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.DBforPostgreSQL/servers",
+            "apiVersion": "2017-12-01",
+            "location": "[resourceGroup().location]",
+            "name": "[variables('databaseServerName')]",
+            "properties": {
+                "version": "11",
+                "administratorLogin": "[parameters('databaseAdministratorLogin')]",
+                "administratorLoginPassword": "[parameters('databaseAdministratorPassword')]",
+                "createMode": "Default",
+                "sslEnforcement": "Disabled",
+                "minimalTlsVersion": "TLSEnforcementDisabled"
+            },
+            "sku": {
+                "name": "[variables('databaseSkuNames')[parameters('databaseSize')].sku]"
+            },
+            "resources": [
+                {
+                    "type": "databases",
+                    "apiVersion": "2017-12-01",
+                    "name": "[variables('databaseName')]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.DBforPostgreSQL/servers/', variables('databaseServerName'))]"
+                    ],
+                    "properties": {
+                        "charset": "utf8",
+                        "collation": "English_United States.1252"
+                    }
+                },
+                {
+                    "type": "Microsoft.DBforPostgreSQL/servers/firewallrules",
+                    "apiVersion": "2017-12-01",
+                    "name": "[concat(variables('databaseServerName'),'/AllowAllWindowsAzureIps')]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.DBforPostgreSQL/servers/', variables('databaseServerName'))]"
+                    ],
+                    "properties": {
+                        "startIpAddress": "0.0.0.0",
+                        "endIpAddress": "0.0.0.0"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2018-02-01",
+            "location": "[resourceGroup().location]",
+            "name": "[variables('hostingPlanName')]",
+            "kind": "linux",
+            "sku": {
+                "name": "B1",
+                "tier": "Standard"
+            },
+            "properties": {
+                "name": "[variables('hostingPlanName')]",
+                "reserved": true,
+                "workerSizeId": "1",
+                "numberOfWorkers": "1"
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2018-11-01",
+            "location": "[resourceGroup().location]",
+            "name": "[parameters('name')]",
+            "kind": "app,linux,container",
+            "dependsOn": [
+                "[variables('hostingPlanName')]"
+            ],
+            "properties": {
+                "name": "[parameters('name')]",
+                "serverFarmId": "[variables('hostingPlanName')]",
+                "httpsOnly": true,
+                "siteConfig": {
+                    "http20Enabled": true,
+                    "minTlsVersion": "1.2",
+                    "appSettings": [
+                        {
+                            "name": "DOCKER_REGISTRY_SERVER_URL",
+                            "value": "[variables('containerRegistryServer')]"
+                        },
+                        {
+                            "name": "DOCKER_REGISTRY_SERVER_USERNAME",
+                            "value": "[parameters('containerRegistryUser')]"
+                        },
+                        {
+                            "name": "DOCKER_REGISTRY_SERVER_PASSWORD",
+                            "value": "[parameters('containerRegistryPassword')]"
+                        },
+                        {
+                            "name": "WEBSITES_ENABLE_APP_SERVICE_STORAGE",
+                            "value": "false"
+                        },
+                        {
+                            "name": "WEBSITES_PORT",
+                            "value": "8080"
+                        },
+                        {
+                            "name": "ConnectionStrings__Default",
+                            "value": "[concat('Database=', variables('databaseName'), ';Server=', reference(resourceId('Microsoft.DBforPostgreSQL/servers', variables('databaseServerName'))).fullyQualifiedDomainName, ';User Id=', parameters('databaseAdministratorLogin'), '@', variables('databaseServerName'), ';Password=', parameters('databaseAdministratorPassword'))]"
+                        },
+                        {
+                            "name": "Auth__ClientId",
+                            "value": "[parameters('authClientId')]"
+                        },
+                        {
+                            "name": "Auth__Domain",
+                            "value": "[parameters('authDomain')]"
+                        },
+                        {
+                            "name": "Google__ApiKey",
+                            "value": "[parameters('googleApiKey')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites/config",
+            "apiVersion": "2018-11-01",
+            "location": "[resourceGroup().location]",
+            "name": "[concat(parameters('name'), '/web')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('name'))]"
+            ],
+            "properties": {
+                "linuxFxVersion": "[concat('DOCKER|', parameters('containerImage'))]"
+            }
+        }
+    ]
+}
